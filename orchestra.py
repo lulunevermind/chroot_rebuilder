@@ -13,6 +13,7 @@ def get_packages(filename):
     with open(filename) as f:
         return f.read()
 
+
 if __name__ == '__main__':
     args = parser.parse_args()
     print args.repo, get_packages(args.packageslist)
