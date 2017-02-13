@@ -1,0 +1,19 @@
+Source: orchestra
+Section: python
+Priority: optional
+Maintainer: jinx, <lulunevermind@gmail.com>
+Build-Depends: debhelper (>= 7),
+               python (>= 2.6.6-3~),
+               dh-python (>=1.0)
+Standards-Version: 3.9.7
+X-Python-Version: >= 2.7
+
+
+Package: orchestra
+Architecture: all
+Section: python
+Depends:
+Description: short description
+ A long description goes here.
+ .
+ It can contain multiple paragraphs
