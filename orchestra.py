@@ -12,6 +12,7 @@ import os
 parser = argparse.ArgumentParser(description='Rebuild packages from repo in chroot')
 parser.add_argument('-r', '--repo', help='Provided repository path', required=True)
 # parser.add_argument('-pl', '--packageslist', help='List of valid .deb packages to rebuild', required=True)
+parser.add_argument('-W', '--wipe', action="store_true", help='Provided repository path', required=False)
 
 CHRPREFIX = "sudo chroot /stable-temp-jail /bin/bash -c '%s'"
 
@@ -33,6 +34,11 @@ def host_exec(command, comment, check):
 
 
 def make_deb_chroot(apt_repo):
+    if args.wipe:
+        host_exec(command='sudo rm -rf /stable-temp-jail',
+                  comment='Wiping environment in /stable-temp-jail...',
+                  check=None)
+
     host_exec(command='sudo debootstrap stable /stable-temp-jail http://deb.debian.org/debian/',
               comment='Creating jail...',
               check=None)
