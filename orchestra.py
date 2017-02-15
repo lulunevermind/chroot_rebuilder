@@ -16,6 +16,8 @@ parser.add_argument('-W', '--wipe', action="store_true", help='Provided reposito
 
 CHRPREFIX = "sudo chroot /stable-temp-jail /bin/bash -c '%s'"
 
+REBUILD_DIR = "/home/rebuild/"
+
 
 def get_packages(filename):
     with open(filename) as f:
@@ -23,7 +25,7 @@ def get_packages(filename):
 
 
 def jail_exec(command, comment, check):
-    print comment
+    print '>>  %s' % comment
     os.system(CHRPREFIX % command)
     #TODO: do a check
 
@@ -55,6 +57,10 @@ def make_deb_chroot(apt_repo):
               comment='Adding repo to source.list...',
               check=None)
 
+    jail_exec(command='echo "deb-src http://%s/debian testing main" >> /etc/apt/sources.list' % apt_repo,
+              comment='Adding repo to source.list...',
+              check=None)
+
     jail_exec(command="apt-get update",
               comment='Updating repos...',
               check=None)
@@ -67,7 +73,34 @@ EOT''' % apt_repo,
               comment='',
               check=None)
 
+    jail_exec(command='apt-get install build-essential devscripts -y',
+              comment='Installing required build-deps',
+              check=None)
+
+
+def rebuild_package(pkg):
+    jail_exec(command='mkdir -p %s' % REBUILD_DIR,
+              comment='Creating home dir for packages rebuild...',
+              check=None)
+
+    jail_exec(command='cd %s && apt-get source %s' % (REBUILD_DIR, pkg),
+              comment='Download package source...',
+              check=None)
+
+    jail_exec(command='cd %s*' % pkg,
+              comment='Cd to pkg dir %s*...' % pkg,
+              check=None)
+
+    jail_exec(command='cd %s%s* && apt-get build-dep %s -y' % (REBUILD_DIR, pkg, pkg),
+              comment='Get build-deps...',
+              check=None)
+
+    jail_exec(command='cd %s%s* && debuild -us -uc' % (REBUILD_DIR, pkg),
+              comment='Rebuild...',
+              check=None)
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    make_deb_chroot(args.repo)
+    # make_deb_chroot(args.repo)
+    rebuild_package('mc')
