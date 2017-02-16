@@ -6,9 +6,13 @@ import os
 # Repo located in /var/packages - do get valid debian packages
 #
 
+# DEPENDENCIES FOR PACKAGE !!!!!!!!!!!!!!
+
 #
 # Default params
 #
+import subprocess
+
 parser = argparse.ArgumentParser(description='Rebuild packages from repo in chroot')
 parser.add_argument('-r', '--repo', help='Provided repository path', required=True)
 # parser.add_argument('-pl', '--packageslist', help='List of valid .deb packages to rebuild', required=True)
@@ -16,7 +20,11 @@ parser.add_argument('-W', '--wipe', action="store_true", help='Provided reposito
 
 CHRPREFIX = "sudo chroot /stable-temp-jail /bin/bash -c '%s'"
 
+JAIL_PATH = "/stable-temp-jail"
 REBUILD_DIR = "/home/rebuild/"
+PKG_RDY_DIR = "/var/packages/"
+SHARED_DIR = "/var/shared-packages"
+REPREPRO_PATH = "/var/packages/debian"
 
 
 def get_packages(filename):
@@ -24,25 +32,31 @@ def get_packages(filename):
         return f.read()
 
 
-def jail_exec(command, comment, check):
+def jail_exec(command, comment, check=None):
     print '>>  %s' % comment
     os.system(CHRPREFIX % command)
     #TODO: do a check
 
 
-def host_exec(command, comment, check):
-    print comment
+def host_exec(command, comment, check=None):
+    print '>>  %s' % comment
     os.system(command)
 
 
-def make_deb_chroot(apt_repo):
+def get_stdout_exec(command, comment, check=None):
+    print '>>  %s' % comment
+    return subprocess.check_output(command, shell=True)
+
+
+def make_deb_chroot(apt_repo="http://deb.debian.org/debian/"):
     if args.wipe:
         host_exec(command='sudo rm -rf /stable-temp-jail',
                   comment='Wiping environment in /stable-temp-jail...',
                   check=None)
 
-    host_exec(command='sudo debootstrap stable /stable-temp-jail http://deb.debian.org/debian/',
-              comment='Creating jail...',
+    # For testing purposes repository provided for jail and repository for rebuilded changes is not the same thing
+    host_exec(command='sudo debootstrap stable /stable-temp-jail %s' % apt_repo,
+              comment='Creating jail from repo...',
               check=None)
 
     jail_exec(command='echo "127.0.0.1   %s" >> /etc/hosts' % apt_repo,
@@ -73,12 +87,32 @@ EOT''' % apt_repo,
               comment='',
               check=None)
 
+    jail_exec(command='mkdir -p %s' % PKG_RDY_DIR,
+              comment='Making packages dir...',
+              check=None)
+
+    jail_exec(command='mkdir -p %s' % SHARED_DIR,
+              comment='Making shared dir from chroot to host...',
+              check=None)
+
     jail_exec(command='apt-get install build-essential devscripts -y',
               comment='Installing required build-deps',
               check=None)
 
+    jail_exec(command='export LANGUAGE="C"; export LC_ALL="C"',
+              comment='Installing required build-deps',
+              check=None)
+    # TODO: Here data is lost, umount from jail needed?
+    host_exec(command='sudo mount --bind %s %s%s' % (SHARED_DIR, '/stable-temp-jail', SHARED_DIR),
+              comment='Mounting dir for reprepro...',
+              check=None)
 
-def rebuild_package(pkg):
+
+def rebuild_package(pkg, wipe=False):
+    if wipe:
+        jail_exec(command='rm -rf %s' % REBUILD_DIR,
+                  comment='Removing rebuild directory...')
+
     jail_exec(command='mkdir -p %s' % REBUILD_DIR,
               comment='Creating home dir for packages rebuild...',
               check=None)
@@ -96,11 +130,36 @@ def rebuild_package(pkg):
               check=None)
 
     jail_exec(command='cd %s%s* && debuild -us -uc' % (REBUILD_DIR, pkg),
-              comment='Rebuild...',
+              comment='Rebuilding...',
               check=None)
 
+    # from host
+    jail_exec(command='cd %s && cp %s* %s' % (REBUILD_DIR, pkg, SHARED_DIR),
+              comment='Copying all debs to delivery place..')
+
+    host_exec(command='cd %s && sudo reprepro -A amd64 remove testing %s' % (REPREPRO_PATH, pkg),
+              comment='Removing amd64 packages from repo...')
+
+    host_exec(command='cd %s && sudo reprepro includedeb testing %s/*.deb' % (REPREPRO_PATH, SHARED_DIR),
+              comment='Including new packages...')
+
+    host_exec(command='cd %s && sudo rm -rf %s*' % (SHARED_DIR, pkg),
+              comment='')
+
+    # TODO: Handle including more than one package produced... (mc-dbg, mc-data for example)
+
+    # apt-cache showsrc mc | grep ^Build-Depends
+    # apt-cache depends bash | grep Depends
+
+
+def resolve_rebuild_order(pkg_list):
+    for p in pkg_list:
+        res_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % p,
+                                   comment='Getting list of dependencies for %s' % p)
+        print res_list
 
 if __name__ == '__main__':
     args = parser.parse_args()
     # make_deb_chroot(args.repo)
-    rebuild_package('mc')
+    # rebuild_package('mc', wipe=True)
+    resolve_rebuild_order(['mc', 'mc-data'])
