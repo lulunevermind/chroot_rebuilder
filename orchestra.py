@@ -8,10 +8,14 @@ import os
 
 # DEPENDENCIES FOR PACKAGE !!!!!!!!!!!!!!
 
+# Use for include SRC             sudo reprepro -b /var/packages/debian/ includedsc testing *.dsc
+# Use for include DEB             sudo reprepro -b /var/packages/debian/ includedeb testing *.deb
+
 #
 # Default params
 #
 import subprocess
+from subprocess import CalledProcessError
 
 parser = argparse.ArgumentParser(description='Rebuild packages from repo in chroot')
 parser.add_argument('-r', '--repo', help='Provided repository path', required=True)
@@ -44,8 +48,14 @@ def host_exec(command, comment, check=None):
 
 
 def get_stdout_exec(command, comment, check=None):
+    res = ''
     print '>>  %s' % comment
-    return subprocess.check_output(command, shell=True)
+    try:
+        res = subprocess.check_output(command, shell=True)
+    except CalledProcessError:
+        # Non-zero status in bash process when no result are yielded??!
+        pass
+    return res
 
 
 def make_deb_chroot(apt_repo="http://deb.debian.org/debian/"):
@@ -143,6 +153,9 @@ def rebuild_package(pkg, wipe=False):
     host_exec(command='cd %s && sudo reprepro includedeb testing %s/*.deb' % (REPREPRO_PATH, SHARED_DIR),
               comment='Including new packages...')
 
+    host_exec(command='cd %s && sudo reprepro export' % REPREPRO_PATH,
+              comment='Export changes')
+
     host_exec(command='cd %s && sudo rm -rf %s*' % (SHARED_DIR, pkg),
               comment='')
 
@@ -152,14 +165,17 @@ def rebuild_package(pkg, wipe=False):
     # apt-cache depends bash | grep Depends
 
 
-def resolve_rebuild_order(pkg_list):
+def get_deps_list(pkg_list):
     for p in pkg_list:
-        res_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % p,
+        dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % p,
                                    comment='Getting list of dependencies for %s' % p)
-        print res_list
+        dep_list = dep_list.split('\n')
+        # stripping and splitting if el is not empty
+        dep_list = [el.split(':')[1].strip() for el in dep_list if el]
+        print dep_list
 
 if __name__ == '__main__':
     args = parser.parse_args()
     # make_deb_chroot(args.repo)
     # rebuild_package('mc', wipe=True)
-    resolve_rebuild_order(['mc', 'mc-data'])
+    get_deps_list(['mc', 'libcomerr2'])
