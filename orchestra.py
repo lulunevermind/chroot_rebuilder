@@ -58,13 +58,12 @@ def get_stdout_exec(command, comment, check=None):
     return res
 
 
-def make_deb_chroot(apt_repo="http://deb.debian.org/debian/"):
+def make_deb_chroot(apt_repo):
     if args.wipe:
         host_exec(command='sudo rm -rf /stable-temp-jail',
                   comment='Wiping environment in /stable-temp-jail...',
                   check=None)
 
-    # For testing purposes repository provided for jail and repository for rebuilded changes is not the same thing
     host_exec(command='sudo debootstrap stable /stable-temp-jail %s' % apt_repo,
               comment='Creating jail from repo...',
               check=None)
@@ -73,6 +72,7 @@ def make_deb_chroot(apt_repo="http://deb.debian.org/debian/"):
               comment='Adding vhost repo to hosts...',
               check=None)
 
+    # For testing purposes repository provided for jail and repository for rebuilded changes is not the same thing
     jail_exec(command='wget -O - -q http://%s/apt.example.com.gpg.key | apt-key add -' % apt_repo,
               comment='Getting pgp key...',
               check=None)
@@ -83,10 +83,6 @@ def make_deb_chroot(apt_repo="http://deb.debian.org/debian/"):
 
     jail_exec(command='echo "deb-src http://%s/debian testing main" >> /etc/apt/sources.list' % apt_repo,
               comment='Adding repo to source.list...',
-              check=None)
-
-    jail_exec(command="apt-get update",
-              comment='Updating repos...',
               check=None)
 
     jail_exec(command='''cat <<EOT >> /etc/apt/preferences.d/preferences
@@ -112,10 +108,15 @@ EOT''' % apt_repo,
     jail_exec(command='export LANGUAGE="C"; export LC_ALL="C"',
               comment='Installing required build-deps',
               check=None)
-    # TODO: Here data is lost, umount from jail needed?
-    host_exec(command='sudo mount --bind %s %s%s' % (SHARED_DIR, '/stable-temp-jail', SHARED_DIR),
-              comment='Mounting dir for reprepro...',
+
+    jail_exec(command="apt-get update",
+              comment='Updating repos...',
               check=None)
+
+    # TODO: Here data is lost, umount from jail needed?
+    # host_exec(command='sudo mount --bind %s %s%s' % (SHARED_DIR, '/stable-temp-jail', SHARED_DIR),
+    #           comment='Mounting dir for reprepro...',
+    #           check=None)
 
 
 def rebuild_package(pkg, wipe=False):
@@ -176,6 +177,6 @@ def get_deps_list(pkg_list):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    # make_deb_chroot(args.repo)
-    # rebuild_package('mc', wipe=True)
-    get_deps_list(['mc', 'libcomerr2'])
+    make_deb_chroot(args.repo)
+    rebuild_package('mc', wipe=True)
+    # get_deps_list(['mc', 'libcomerr2'])
