@@ -19,7 +19,7 @@ from subprocess import CalledProcessError
 
 parser = argparse.ArgumentParser(description='Rebuild packages from repo in chroot')
 parser.add_argument('-r', '--repo', help='Provided repository path', required=True)
-# parser.add_argument('-pl', '--packageslist', help='List of valid .deb packages to rebuild', required=True)
+parser.add_argument('-p', '--packageslist', help='File with packages to rebuild', required=True)
 parser.add_argument('-W', '--wipe', action="store_true", help='Provided repository path', required=False)
 
 CHRPREFIX = "sudo chroot /stable-temp-jail /bin/bash -c '%s'"
@@ -151,19 +151,32 @@ def rebuild_package(pkg, wipe=False):
     # apt-cache depends bash | grep Depends
 
 
-def get_deps_list(pkg_list):
-    for p in pkg_list:
-        dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % p,
-                                   comment='Getting list of dependencies for %s' % p)
-        dep_list = dep_list.split('\n')
+class Node:
+    def __init__(self, name):
+        self.name = name
+        self.edges = []
 
-        # stripping and splitting if el is not empty
-        dep_list = [el.split(':')[1].strip() for el in dep_list if el]
-        print dep_list
+    def add_edge(self, node):
+        self.edges.append(node)
+
+
+def get_deps_list(package):
+    dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % package,
+                               comment='Getting list of dependencies for %s' % package)
+    dep_list = dep_list.split('\n')
+    # stripping and splitting if el is not empty
+    dep_list = [el.split(':')[1].strip() for el in dep_list if el]
+    return dep_list
+
+
+def make_tree(packages):
+    for p in packages:
+        deps = get_deps_list(p)
+        print deps
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    make_deb_chroot(args.repo)
-    rebuild_package('mc', wipe=True)
-    # get_deps_list(['mc', 'libcomerr2'])
+    # make_deb_chroot(args.repo)
+    # rebuild_package('mc', wipe=True)
+    make_tree()
