@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import argparse
 import os
+import re
 
 #
 # Repo located in /var/packages - do get valid debian packages
@@ -33,7 +34,7 @@ REPREPRO_PATH = "/var/packages/debian"
 
 def get_packages(filename):
     with open(filename) as f:
-        return f.read()
+        return f.read().split('\n')
 
 
 def jail_exec(command, comment, check=None):
@@ -90,7 +91,7 @@ Package: *
 Pin: origin %s
 Pin-Priority: 1001
 EOT''' % apt_repo,
-              comment='',)
+              comment='Pinning repo...',)
 
     jail_exec(command='mkdir -p %s' % PKG_RDY_DIR,
               comment='Making packages dir...',)
@@ -99,9 +100,6 @@ EOT''' % apt_repo,
               comment='Making shared dir from chroot to host...',)
 
     jail_exec(command='apt-get install build-essential devscripts -y',
-              comment='Installing required build-deps',)
-
-    jail_exec(command='export LANGUAGE="C"; export LC_ALL="C"',
               comment='Installing required build-deps',)
 
     # TODO: Here data is lost, umount from jail needed?
@@ -151,32 +149,48 @@ def rebuild_package(pkg, wipe=False):
     # apt-cache depends bash | grep Depends
 
 
-class Node:
-    def __init__(self, name):
-        self.name = name
-        self.edges = []
+# class Node:
+#     def __init__(self, name):
+#         self.name = name
+#         self.edges = []
+#
+#     def add_edge(self, node):
+#         self.edges.append(node)
+#
+#
+# def get_deps_list(package):
+#     dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % package,
+#                                comment='Getting list of dependencies for %s' % package)
+#     dep_list = dep_list.split('\n')
+#     # stripping and splitting if el is not empty
+#     dep_list = [el.split(':')[1].strip() for el in dep_list if el]
+#     return dep_list
+#
+#
+# def make_tree(packages):
+#     for p in packages:
+#         deps = get_deps_list(p)
+#         print deps
 
-    def add_edge(self, node):
-        self.edges.append(node)
-
-
-def get_deps_list(package):
-    dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % package,
-                               comment='Getting list of dependencies for %s' % package)
-    dep_list = dep_list.split('\n')
-    # stripping and splitting if el is not empty
-    dep_list = [el.split(':')[1].strip() for el in dep_list if el]
-    return dep_list
-
-
-def make_tree(packages):
-    for p in packages:
-        deps = get_deps_list(p)
-        print deps
+def resolve_rebuild_order(pkg_list):
+    dep_chains = []
+    for p in pkg_list:
+        dep_chain = ['1: %s' % p]
+        for sp in pkg_list:
+            if p != sp:
+                r = get_stdout_exec(command='apt-rdepends %s | grep -n -m 1 %s' % (p, sp),
+                                    comment='Searching for %s in %s rdeps...' % (sp, p))
+                if r:
+                    replaced = re.sub('Depends:', '', r)
+                    replaced2 = re.sub('\(.+\):', '', replaced)
+                    dep_chain.append(replaced2.strip())
+        if len(dep_chain) > 1:
+            dep_chains.append(list(reversed(sorted(dep_chain))))
+    print dep_chains
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
     # make_deb_chroot(args.repo)
     # rebuild_package('mc', wipe=True)
-    make_tree()
+    resolve_rebuild_order(get_packages(args.packageslist))
