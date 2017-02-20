@@ -3,18 +3,6 @@ import argparse
 import os
 import re
 
-#
-# Repo located in /var/packages - do get valid debian packages
-#
-
-# DEPENDENCIES FOR PACKAGE !!!!!!!!!!!!!!
-
-# Use for include SRC             sudo reprepro -b /var/packages/debian/ includedsc testing *.dsc
-# Use for include DEB             sudo reprepro -b /var/packages/debian/ includedeb testing *.deb
-
-#
-# Default params
-#
 import subprocess
 from subprocess import CalledProcessError
 
@@ -48,7 +36,7 @@ def host_exec(command, comment, check=None):
     os.system(command)
 
 
-def get_stdout_exec(command, comment, check=None):
+def get_stdout_host_exec(command, comment, check=None):
     res = ''
     print '>>  %s' % comment
     try:
@@ -182,8 +170,8 @@ def resolve_rebuild_order(pkg_list):
         dep_chain = ['1: %s' % p]
         for sp in pkg_list:
             if p != sp:
-                r = get_stdout_exec(command='apt-rdepends %s | grep -n -m 1 %s' % (p, sp),
-                                    comment='Searching for %s in %s rdeps...' % (sp, p))
+                r = get_stdout_host_exec(command='apt-rdepends %s | grep -n -m 1 %s' % (p, sp),
+                                         comment='Searching for %s in %s rdeps...' % (sp, p))
                 if r:
                     replaced = re.sub('Depends:', '', r)
                     replaced = re.sub('\(.+\)', '', replaced)
