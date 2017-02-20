@@ -149,6 +149,9 @@ def rebuild_package(pkg, wipe=False):
     # apt-cache depends bash | grep Depends
 
 
+# https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
+# resolve via graphs
+
 # class Node:
 #     def __init__(self, name):
 #         self.name = name
@@ -173,6 +176,7 @@ def rebuild_package(pkg, wipe=False):
 #         print deps
 
 def resolve_rebuild_order(pkg_list):
+    """Resolves order using apt-rdepends, iterationg over packages, if there are"""
     dep_chains = []
     for p in pkg_list:
         dep_chain = ['1: %s' % p]
@@ -182,15 +186,20 @@ def resolve_rebuild_order(pkg_list):
                                     comment='Searching for %s in %s rdeps...' % (sp, p))
                 if r:
                     replaced = re.sub('Depends:', '', r)
-                    replaced2 = re.sub('\(.+\):', '', replaced)
-                    dep_chain.append(replaced2.strip())
+                    replaced = re.sub('\(.+\)', '', replaced)
+                    dep_chain.append(replaced.strip())
         if len(dep_chain) > 1:
             dep_chains.append(list(reversed(sorted(dep_chain))))
-    print dep_chains
-
-
+    longest_dep_chain = max(dep_chains, key=len)
+    replaced_ldc = [re.sub('\d+:', '', dep).strip() for dep in longest_dep_chain]
+    if len(replaced_ldc) == len(pkg_list):
+        return replaced_ldc
+    else:
+        print 'Error: Not all packages are dependent on each other!'
+        
 if __name__ == '__main__':
     args = parser.parse_args()
-    # make_deb_chroot(args.repo)
-    # rebuild_package('mc', wipe=True)
-    resolve_rebuild_order(get_packages(args.packageslist))
+    order = resolve_rebuild_order(get_packages(args.packageslist))
+    for p in order:
+        make_deb_chroot(args.repo)
+        rebuild_package(p, wipe=True)
