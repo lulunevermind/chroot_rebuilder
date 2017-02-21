@@ -42,12 +42,13 @@ testing|main|source: gawk 1:4.1.1+dfsg-1
 testing|main|source: glibc 2.19-18+deb8u7
 testing|main|source: mc 3:4.8.3-10
 ```
+As you can see, you need amd64 binary packages, for now script works only with amd64.
 Include source packages:
 ```
 cd /var/packages/debian
 sudo reprepro includedsc testing $PACKAGES_PATH/*.dsc
 ```
-or .deb, as described in manual
+and .deb, as described in manual
 ```
 sudo reprepro includedeb testing $PACKAGES_PATH/*.deb
 ```
