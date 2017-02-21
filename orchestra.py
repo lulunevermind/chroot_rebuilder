@@ -20,6 +20,74 @@ SHARED_DIR = "/var/shared-packages"
 REPREPRO_PATH = "/var/packages/debian"
 
 
+class Node:
+    def __init__(self, name):
+        self.name = name
+        self.edges = []
+
+    def add_edge(self, node):
+        self.edges.append(node)
+
+
+def search_tree(node, search_param):
+    if node.name == search_param:
+        return node
+    else:
+        for edge in node.edges:
+            res = search_tree(edge, search_param)
+            if res:
+                return res
+
+
+def visualize_tree(node):
+    for edge in node.edges:
+        print 'Node: %s, Edge: %s' % (node.name, edge.name)
+        visualize_tree(edge)
+
+
+def dep_resolve(node, resolved, seen):
+    seen.append(node)
+    for edge in node.edges:
+        if edge not in resolved:
+            if edge in seen:
+                raise Exception('Circular reference detected: %s -> %s' % (node.name, edge.name))
+        dep_resolve(edge, resolved, seen)
+    resolved.append(node.name)
+    return resolved
+
+
+def build_package_tree(r, packages):
+    """Builds packages tree. If package located as a dependency or a build-dependency,
+     adding new node, if such node is not existing, if it's so - adding to an existing node"""
+    for p in packages:
+        pn = Node(p)
+        deps = get_deps_list(p)
+        bdeps = get_build_deps(p)
+        all_deps = deps + bdeps
+        for d in all_deps:
+            if d in packages:
+                exists = search_tree(r, p)
+                if exists:
+                    exists.add_edge(Node(d))
+                else:
+                    r.add_edge(pn)
+                    pn.add_edge(Node(d))
+    return r
+
+
+def skip_duplicates(input):
+    """If package is required more than 1 time in a build chain (libc6 for example)"""
+    output = []
+    for x in input:
+        if x not in output:
+            output.append(x)
+    return output
+
+
+def skip_root(resolved):
+    return resolved[:-1]
+
+
 def get_packages(filename):
     with open(filename) as f:
         return f.read().split('\n')
@@ -28,7 +96,6 @@ def get_packages(filename):
 def jail_exec(command, comment, check=None):
     print '>>  %s' % comment
     os.system(CHRPREFIX % command)
-    #TODO: do a check
 
 
 def host_exec(command, comment, check=None):
@@ -101,15 +168,13 @@ EOT''' % apt_repo,
     jail_exec(command='apt-get install build-essential devscripts -y',
               comment='Installing required build-deps',)
 
-    # TODO: Here data is lost, umount from jail needed?
     host_exec(command='sudo mount --bind %s %s%s' % (SHARED_DIR, '/stable-temp-jail', SHARED_DIR),
               comment='Mounting dir for reprepro...',)
 
 
-def rebuild_package(pkg, wipe=False):
-    if wipe:
-        jail_exec(command='rm -rf %s' % REBUILD_DIR,
-                  comment='Removing rebuild directory...')
+def rebuild_package(pkg):
+    jail_exec(command='rm -rf %s' % REBUILD_DIR,
+              comment='Removing rebuild directory...')
 
     jail_exec(command='mkdir -p %s' % REBUILD_DIR,
               comment='Creating home dir for packages rebuild...',)
@@ -117,17 +182,18 @@ def rebuild_package(pkg, wipe=False):
     jail_exec(command='cd %s && apt-get source %s' % (REBUILD_DIR, pkg),
               comment='Download package source...',)
 
-    jail_exec(command='cd %s*' % pkg,
-              comment='Cd to pkg dir %s*...' % pkg,)
+    jail_exec(command='cd *',
+              comment='Cd to pkg dir *...',)
 
-    jail_exec(command='cd %s%s* && apt-get build-dep %s -y' % (REBUILD_DIR, pkg, pkg),
+    jail_exec(command='cd %s/* && apt-get build-dep %s -y' % (REBUILD_DIR,  pkg),
               comment='Get build-deps...',)
 
-    jail_exec(command='cd %s%s* && debuild -us -uc' % (REBUILD_DIR, pkg),
+    jail_exec(command='cd %s/* && debuild -us -uc' % REBUILD_DIR,
               comment='Rebuilding...',)
 
-    # from host
-    jail_exec(command='cd %s && cp %s* %s' % (REBUILD_DIR, pkg, SHARED_DIR),
+
+def add_to_repo(pkg):
+    jail_exec(command='cd %s && cp * %s' % (REBUILD_DIR, SHARED_DIR),
               comment='Copying all debs to delivery place..')
 
     host_exec(command='cd %s && sudo reprepro -A amd64 remove testing %s' % (REPREPRO_PATH, pkg),
@@ -137,53 +203,10 @@ def rebuild_package(pkg, wipe=False):
               comment='Including new packages...')
 
     host_exec(command='cd %s && sudo reprepro export' % REPREPRO_PATH,
-              comment='Export changes')
+              comment='Exporting changes...')
 
-    host_exec(command='cd %s && sudo rm -rf %s*' % (SHARED_DIR, pkg),
-              comment='')
-
-    # TODO: Handle including more than one package produced... (mc-dbg, mc-data for example)
-
-    # apt-cache showsrc mc | grep ^Build-Depends
-    # apt-cache depends bash | grep Depends
-
-
-# https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
-# resolve via graphs
-
-class Node:
-    def __init__(self, name):
-        self.name = name
-        self.edges = []
-
-    def add_edge(self, node):
-        self.edges.append(node)
-
-
-def search_tree(node, search_param):
-    if node.name == search_param:
-        return node
-    else:
-        for edge in node.edges:
-            res = search_tree(edge, search_param)
-            if res:
-                return res
-
-
-def visualize_tree(node):
-    for edge in node.edges:
-        print 'Node: %s, Edge: %s' % (node.name, edge.name)
-        visualize_tree(edge)
-
-
-def dep_resolve(node, resolved, seen):
-    seen.append(node)
-    for edge in node.edges:
-        if edge not in resolved:
-            if edge in seen:
-                raise Exception('Circular reference detected: %s -> %s' % (node.name, edge.name))
-        dep_resolve(edge, resolved, seen)
-    resolved.append(node)
+    host_exec(command='cd %s && sudo rm -rf *' % SHARED_DIR,
+              comment='Cleaning build directory...')
 
 
 def get_deps_list(package):
@@ -208,39 +231,18 @@ def get_build_deps(package):
     return build_deps
 
 
-def build_package_tree(r, packages):
-    for p in packages:
-        pn = Node(p)
-        deps = get_deps_list(p)
-        bdeps = get_build_deps(p)
-        all_deps = deps + bdeps
-        for d in all_deps:
-            if d in packages:
-                exists = search_tree(r, p)
-                if exists:
-                    exists.add_edge(Node(d))
-                else:
-                    r.add_edge(pn)
-                    pn.add_edge(Node(d))
-    return r
-
-
 if __name__ == '__main__':
     args = parser.parse_args()
     packages = get_packages(args.packageslist)
 
     r = Node('root')
-
     build_package_tree(r, packages)
-    visualize_tree(r)
+    resolved = dep_resolve(r, [], [])
+    resolved = skip_duplicates(resolved)
+    resolved = skip_root(resolved)
+    print 'Build order ==>> %s' % resolved
 
-    resolved = []
-    dep_resolve(r, resolved, [])
-    for node in resolved:
-        print node.name
-
-
-        # order = resolve_rebuild_order(get_packages(args.packageslist))
-    # for p in order:
-    #     make_deb_chroot(args.repo)
-    #     rebuild_package(p, wipe=True)
+    for p in resolved:
+        make_deb_chroot(args.repo)
+        rebuild_package(p)
+        add_to_repo(p)
