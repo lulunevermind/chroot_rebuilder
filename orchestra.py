@@ -47,6 +47,17 @@ def get_stdout_host_exec(command, comment, check=None):
     return res
 
 
+def get_stdout_jail_exec(command, comment, check=None):
+    res = ''
+    print '>>  %s' % comment
+    try:
+        res = subprocess.check_output(CHRPREFIX % command, shell=True)
+    except CalledProcessError:
+        # Non-zero status in bash process when no result are yielded??!
+        pass
+    return res
+
+
 def make_deb_chroot(apt_repo):
     if args.wipe:
         host_exec(command='sudo umount %s%s' % (JAIL_PATH, SHARED_DIR),
@@ -140,54 +151,96 @@ def rebuild_package(pkg, wipe=False):
 # https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
 # resolve via graphs
 
-# class Node:
-#     def __init__(self, name):
-#         self.name = name
-#         self.edges = []
-#
-#     def add_edge(self, node):
-#         self.edges.append(node)
-#
-#
-# def get_deps_list(package):
-#     dep_list = get_stdout_exec(command='apt-cache depends %s | grep Depends' % package,
-#                                comment='Getting list of dependencies for %s' % package)
-#     dep_list = dep_list.split('\n')
-#     # stripping and splitting if el is not empty
-#     dep_list = [el.split(':')[1].strip() for el in dep_list if el]
-#     return dep_list
-#
-#
-# def make_tree(packages):
-#     for p in packages:
-#         deps = get_deps_list(p)
-#         print deps
+class Node:
+    def __init__(self, name):
+        self.name = name
+        self.edges = []
 
-def resolve_rebuild_order(pkg_list):
-    """Resolves order using apt-rdepends, iterationg over packages, if there are"""
-    dep_chains = []
-    for p in pkg_list:
-        dep_chain = ['1: %s' % p]
-        for sp in pkg_list:
-            if p != sp:
-                r = get_stdout_host_exec(command='apt-rdepends %s | grep -n -m 1 %s' % (p, sp),
-                                         comment='Searching for %s in %s rdeps...' % (sp, p))
-                if r:
-                    replaced = re.sub('Depends:', '', r)
-                    replaced = re.sub('\(.+\)', '', replaced)
-                    dep_chain.append(replaced.strip())
-        if len(dep_chain) > 1:
-            dep_chains.append(list(reversed(sorted(dep_chain))))
-    longest_dep_chain = max(dep_chains, key=len)
-    replaced_ldc = [re.sub('\d+:', '', dep).strip() for dep in longest_dep_chain]
-    if len(replaced_ldc) == len(pkg_list):
-        return replaced_ldc
+    def add_edge(self, node):
+        self.edges.append(node)
+
+
+def search_tree(node, search_param):
+    if node.name == search_param:
+        return node
     else:
-        print 'Error: Not all packages are dependent on each other!'
-        
+        for edge in node.edges:
+            res = search_tree(edge, search_param)
+            if res:
+                return res
+
+
+def visualize_tree(node):
+    for edge in node.edges:
+        print 'Node: %s, Edge: %s' % (node.name, edge.name)
+        visualize_tree(edge)
+
+
+def dep_resolve(node, resolved, seen):
+    seen.append(node)
+    for edge in node.edges:
+        if edge not in resolved:
+            if edge in seen:
+                raise Exception('Circular reference detected: %s -> %s' % (node.name, edge.name))
+        dep_resolve(edge, resolved, seen)
+    resolved.append(node)
+
+
+def get_deps_list(package):
+    dep_list = get_stdout_jail_exec(command='apt-cache depends %s | grep Depends' % package,
+                                    comment='Getting list of dependencies for %s' % package)
+    dep_list = dep_list.split('\n')
+    # stripping and splitting if el is not empty
+    dep_list = [el.split(':')[1].strip() for el in dep_list if el]
+    print dep_list
+    return dep_list
+
+
+def get_build_deps(package):
+    build_deps = get_stdout_jail_exec(command='apt-cache showsrc %s | grep ^Build-Depends' % package,
+                                      comment='Getting list of build-deps for %s' % package)
+    prefix = 'Build-Depends:'
+    if build_deps:
+        build_deps = build_deps[len(prefix):].split(',')
+        build_deps = [re.sub('\(.+\)|\[.+\]', '', dep) for dep in build_deps]
+        build_deps = [dep.strip() for dep in build_deps]
+    print build_deps
+    return build_deps
+
+
+def build_package_tree(r, packages):
+    for p in packages:
+        pn = Node(p)
+        deps = get_deps_list(p)
+        bdeps = get_build_deps(p)
+        all_deps = deps + bdeps
+        for d in all_deps:
+            if d in packages:
+                exists = search_tree(r, p)
+                if exists:
+                    exists.add_edge(Node(d))
+                else:
+                    r.add_edge(pn)
+                    pn.add_edge(Node(d))
+    return r
+
+
 if __name__ == '__main__':
     args = parser.parse_args()
-    order = resolve_rebuild_order(get_packages(args.packageslist))
-    for p in order:
-        make_deb_chroot(args.repo)
-        rebuild_package(p, wipe=True)
+    packages = get_packages(args.packageslist)
+
+    r = Node('root')
+
+    build_package_tree(r, packages)
+    visualize_tree(r)
+
+    resolved = []
+    dep_resolve(r, resolved, [])
+    for node in resolved:
+        print node.name
+
+
+        # order = resolve_rebuild_order(get_packages(args.packageslist))
+    # for p in order:
+    #     make_deb_chroot(args.repo)
+    #     rebuild_package(p, wipe=True)
