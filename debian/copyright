@@ -1,9 +1,9 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: orchestra
-Upstream-Contact: jinx, <lulunevermind@gmail.com>
+Upstream-Contact: ang, <andrey-ng@yandex.ru>
 
 Files: *
-Copyright: 2011, jinx, <lulunevermind@gmail.com>
+Copyright: 2011, ang, <andrey-ng@yandex.ru>
 License: (GPL-2+ | LGPL-2 | GPL-3 | whatever)
  Full text of licence.
  .

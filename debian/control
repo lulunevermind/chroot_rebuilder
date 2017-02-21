@@ -1,7 +1,7 @@
 Source: orchestra
 Section: python
 Priority: optional
-Maintainer: jinx, <lulunevermind@gmail.com>
+Maintainer: ang, <andrey-ng@yandex.ru>
 Build-Depends: debhelper (>= 7),
                python (>= 2.6.6-3~),
                dh-python (>=1.0)
@@ -12,7 +12,7 @@ X-Python-Version: >= 2.7
 Package: orchestra
 Architecture: all
 Section: python
-Depends: debootstrap (>=1.0.78)
+Depends: debootstrap (>=1.0.78), python (>=2.7)
 Description: short description
  A long description goes here.
  .
