@@ -28,6 +28,7 @@ deb repo up and running somewhere.. ;(
 1) https://www.howtoforge.com/setting-up-an-apt-repository-with-reprepro-and-nginx-on-debian-wheezy
 Good manual to get local repo with nginx.
 After nginx is up add apt.example.com to /etc/hosts
+
 2) Download and include packages dependent on each other in your repo, for example:
 
 testing|main|amd64: bash 4.2+dfsg-0.1+deb7u4
